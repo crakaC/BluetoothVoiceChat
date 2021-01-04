@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto" android:id="@+id/nav_graph"
+    app:startDestination="@id/deviceListFragment">
+
+    <fragment
+        android:id="@+id/permissionsFragment"
+        android:name="com.crakac.bluetoothvoicechat.PermissionsFragment"
+        android:label="PermissionsFragment" />
+    <fragment
+        android:id="@+id/deviceListFragment"
+        android:name="com.crakac.bluetoothvoicechat.DeviceListFragment"
+        android:label="DeviceListFragment" >
+        <action
+            android:id="@+id/action_deviceListFragment_to_permissionsFragment"
+            app:destination="@id/permissionsFragment"
+            app:popUpTo="@id/deviceListFragment"
+            app:popUpToInclusive="false" />
+        <action
+            android:id="@+id/action_deviceListFragment_to_connectionFragment"
+            app:destination="@id/connectionFragment" />
+    </fragment>
+    <fragment
+        android:id="@+id/connectionFragment"
+        android:name="com.crakac.bluetoothvoicechat.ConnectionFragment"
+        android:label="ConnectionFragment" >
+        <action
+            android:id="@+id/action_connectionFragment_to_permissionsFragment"
+            app:destination="@id/permissionsFragment" />
+        <argument
+            android:name="deviceName"
+            app:argType="string" />
+        <argument
+            android:name="address"
+            app:argType="string" />
+    </fragment>
+</navigation>
