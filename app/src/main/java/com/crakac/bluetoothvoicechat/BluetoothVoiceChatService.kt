@@ -11,111 +11,86 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.*
+import java.util.concurrent.LinkedBlockingQueue
 
 private const val SERVER_NAME = "BluetoothVoiceChatServer"
 private val ID = UUID.fromString("225b9254-9d8b-4b8b-84cc-4e37113cfd93")
 private const val TAG = "BTVoiceChatService"
 
-enum class ChatServiceState(value: Int) {
-    NONE(0),
-    LISTEN(1),
-    CONNECTING(2),
-    CONNECTED(3)
-}
-
 class BluetoothVoiceChatService {
 
     interface ConnectionListener {
         fun onConnected()
-        fun onLostConnection()
         fun onDisconnected()
-        fun onMessage(bytes: Int, buffer: ByteArray)
-        fun onConnectionFailed()
+        fun onMessage(buffer: ByteArray, bytes: Int)
     }
 
     private var scope = CoroutineScope(Job())
     private val adapter = BluetoothAdapter.getDefaultAdapter()
     private var listener: ConnectionListener? = null
 
-    @Volatile
-    private var _state = ChatServiceState.NONE
-    private var state: ChatServiceState
-        get() = _state
+    private var serverSocket: BluetoothServerSocket? = null
+    private var outSocket: BluetoothSocket? = null
+    private var inSocket: BluetoothSocket? = null
+
+    private var _isInSocketReady = false
+    private var isInSocketReady: Boolean
+        @Synchronized
+        get() = _isInSocketReady
         @Synchronized set(value) {
-            _state = value
+            _isInSocketReady = value
         }
 
-    private var acceptJob: Job? = null
-    private var connectJob: Job? = null
-    private var connectedJob: Job? = null
-
-    private var serverSocket: BluetoothServerSocket? = null
-    private var socket: BluetoothSocket? = null
+    private var _isOutnSocketReady = false
+    private var isOutnSocketReady: Boolean
+        @Synchronized
+        get() = _isOutnSocketReady
+        @Synchronized
+        set(value) {
+            _isOutnSocketReady = value
+        }
 
     private var inputStream: InputStream? = null
     private var outputStream: OutputStream? = null
 
+    private val writeQueue = LinkedBlockingQueue<ByteArray>()
+    private val readBuffer = ByteArray(8096)
+
+    @Volatile
+    private var readCount = 0L
+    @Volatile
+    private var writeCount = 0L
+
     fun setConnectionListener(listener: ConnectionListener?) {
         this.listener = listener
+        scope.launch {
+            while(isActive){
+                delay(1000)
+                Log.d(TAG, "read: $readCount, write: $writeCount")
+            }
+        }
     }
 
     @Synchronized
     fun start() {
-        acceptJob?.cancel()
-        connectJob?.cancel()
-        connectedJob?.cancel()
-
-        acceptJob = accept()
+        accept()
     }
 
     @Synchronized
     fun connect(address: String) {
-        Log.d(TAG, "connect to $address")
-        connectJob?.cancel()
-        connectedJob?.cancel()
         val device = adapter.getRemoteDevice(address)
-        connectJob = connectTo(device)
-    }
-
-    @Synchronized
-    fun connected(socket: BluetoothSocket) {
-        connectJob?.cancel()
-        connectedJob?.cancel()
-        acceptJob?.cancel()
-
-        close(serverSocket)
-        connectedJob = connectedTo(socket)
+        connectTo(device)
     }
 
     @Synchronized
     fun stop() {
         Log.d(TAG, "stop")
-        state = ChatServiceState.NONE
         scope.cancel()
-        close(socket, serverSocket)
+        close(inSocket, outSocket, serverSocket)
     }
 
-    suspend fun write(out: ByteArray) {
-        if (state != ChatServiceState.CONNECTED) return
-        withContext(Dispatchers.IO) {
-            try {
-                Log.d(TAG, "Try to write buffer")
-                outputStream?.write(out)
-            } catch (e: IOException) {
-                Log.e(TAG, "Cannot write to OutputStream", e)
-            }
-        }
-    }
-
-    fun connectionFailed() {
-        state = ChatServiceState.NONE
-        listener?.onConnectionFailed()
-    }
-
-    private fun connectionLost() {
-        state = ChatServiceState.NONE
-        listener?.onLostConnection()
-        start()
+    fun write(out: ByteArray) {
+        writeQueue.add(out)
     }
 
     private fun disconnected() {
@@ -126,38 +101,54 @@ class BluetoothVoiceChatService {
         listener?.onConnected()
     }
 
-    private fun handleMessage(bytes: Int, buffer: ByteArray) {
-        listener?.onMessage(bytes, buffer)
+    private fun handleMessage(buffer: ByteArray, bytes: Int) {
+        listener?.onMessage(buffer, bytes)
     }
 
-    private fun accept() = scope.launch {
-        withContext(Dispatchers.IO) {
-            serverSocket = try {
-                adapter.listenUsingRfcommWithServiceRecord(SERVER_NAME, ID)
-            } catch (e: IOException) {
-                Log.e(TAG, "Cannot open serverSocket", e)
-                return@withContext
-            }
-            state = ChatServiceState.LISTEN
+    @Synchronized
+    private fun checkBiDirectionalConnection() {
+        if (isInSocketReady && isOutnSocketReady) {
+            connectionSucceeded()
+        }
+    }
+
+    private fun accept(){
+        scope.launch {
             Log.d(TAG, "BEGIN Accept Coroutine")
-            while (state != ChatServiceState.CONNECTED) {
-                val socket = try {
+            while (isActive) {
+                serverSocket = try {
+                    adapter.listenUsingRfcommWithServiceRecord(SERVER_NAME, ID)
+                } catch (e: IOException) {
+                    val d = 5000L
+                    Log.e(TAG, "Cannot open serverSocket. retry after $d msec", e)
+                    delay(d)
+                    continue
+                }
+                isInSocketReady = false
+                inSocket = try {
                     serverSocket?.accept()!!
                 } catch (e: IOException) {
                     Log.e(TAG, "Accept failed.", e)
                     break
                 }
-                yield()
                 Log.d(TAG, "accepted!")
-                synchronized(this@BluetoothVoiceChatService) {
-                    when (state) {
-                        ChatServiceState.LISTEN, ChatServiceState.CONNECTING -> {
-                            connected(socket)
-                        }
-                        ChatServiceState.NONE, ChatServiceState.CONNECTED -> {
-                            Log.d(TAG, "close unwanted socket")
-                            close(socket)
-                        }
+                try {
+                    inputStream = inSocket?.inputStream
+                } catch (e: IOException) {
+                    Log.e(TAG, "Cannot get IOStream from socket", e)
+                    continue
+                }
+                isInSocketReady = true
+                checkBiDirectionalConnection()
+                while (isActive) {
+                    try {
+                        val bytes = inputStream!!.read(readBuffer, 0, readBuffer.size)
+                        handleMessage(readBuffer, bytes)
+                        readCount += bytes
+                    } catch (e: IOException) {
+                        Log.e(TAG, "disconnected", e)
+                        disconnected()
+                        break
                     }
                 }
             }
@@ -165,13 +156,12 @@ class BluetoothVoiceChatService {
         }
     }
 
-    private fun connectTo(device: BluetoothDevice) = scope.launch {
-        Log.i(TAG, "BEGIN ConnectThread")
-        state = ChatServiceState.CONNECTING
-        withContext(Dispatchers.IO) {
-            adapter.cancelDiscovery()
-            while (state == ChatServiceState.CONNECTING || state == ChatServiceState.LISTEN) {
-                val socket = try {
+    private fun connectTo(device: BluetoothDevice) {
+        scope.launch {
+            Log.i(TAG, "BEGIN ConnectThread")
+            while (isActive) {
+                isOutnSocketReady = false
+                outSocket = try {
                     device.createRfcommSocketToServiceRecord(ID)
                 } catch (e: IOException) {
                     Log.e(TAG, "cannot create socket to $device", e)
@@ -179,51 +169,33 @@ class BluetoothVoiceChatService {
                     continue
                 }
                 try {
-                    socket?.connect()
+                    adapter.cancelDiscovery()
+                    outSocket?.connect()
+                    outputStream = outSocket?.outputStream
                 } catch (e: IOException) {
                     Log.e(TAG, "Connect to $device failed")
                     delay(3000)
                     continue
                 }
-                connected(socket!!)
-                break
-            }
-        }
-    }
-
-    private fun connectedTo(socket: BluetoothSocket) = scope.launch {
-        Log.d(TAG, "create ConnectedThread")
-        this@BluetoothVoiceChatService.socket = socket
-        try {
-            inputStream = socket.inputStream
-            outputStream = socket.outputStream
-        } catch (e: IOException) {
-            Log.e(TAG, "Cannot get IOStream from socket", e)
-        }
-        state = ChatServiceState.CONNECTED
-        connectionSucceeded()
-        withContext(Dispatchers.IO) {
-            Log.i(TAG, "BEGIN ConnectedThread")
-            val buffer = ByteArray(8096)
-            var bytes: Int
-            while (state == ChatServiceState.CONNECTED) {
-                try {
-                    bytes = inputStream!!.read(buffer)
-                    Log.d(TAG, "read $bytes bytes")
-                    handleMessage(bytes, buffer)
-                } catch (e: IOException) {
-                    Log.e(TAG, "disconnected", e)
-                    connectionLost()
-                    break
+                isOutnSocketReady = true
+                checkBiDirectionalConnection()
+                while (isActive) {
+                    val out = writeQueue.poll() ?: continue
+                    try {
+                        outputStream?.write(out)
+                        writeCount += out.size
+                    } catch (e: IOException) {
+                        Log.e(TAG, "Cannot write to OutputStream", e)
+                        disconnected()
+                    }
                 }
+                writeQueue.clear()
             }
-            disconnected()
         }
     }
 
-
-    private fun close(vararg sockets: Closeable?){
-        for(socket in sockets) {
+    private fun close(vararg sockets: Closeable?) {
+        for (socket in sockets) {
             try {
                 socket?.close()
             } catch (e: IOException) {

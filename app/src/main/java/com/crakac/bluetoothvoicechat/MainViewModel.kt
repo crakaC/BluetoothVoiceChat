@@ -5,7 +5,7 @@ import androidx.lifecycle.*
 import kotlinx.coroutines.launch
 
 class MainViewModel(val deviceName: String, val macAddress: String) : ViewModel(),
-    BluetoothVoiceChatService.ConnectionListener {
+    BluetoothVoiceChatService.ConnectionListener, AudioRecordServiceListener {
     val TAG: String = "MainViewModel"
 
     class Factory(private val deviceName: String, private val address: String) :
@@ -17,6 +17,7 @@ class MainViewModel(val deviceName: String, val macAddress: String) : ViewModel(
     }
 
     private val chatService = BluetoothVoiceChatService()
+    private val audioService = AudioRecordService()
 
     private val _message = MutableLiveData<String>()
     val message: LiveData<String>
@@ -29,12 +30,27 @@ class MainViewModel(val deviceName: String, val macAddress: String) : ViewModel(
     private val _spinner = MutableLiveData(true)
     val spinnerVisibility: LiveData<Int>
         get() = Transformations.map(_spinner) { if (it) View.VISIBLE else View.GONE }
+
     private val _buttonEnabled = MutableLiveData(false)
     val buttonEnabled: LiveData<Boolean>
         get() = _buttonEnabled
 
+    private var _voiceEnabled = false
+    var voiceEnabled: Boolean
+        get() = _voiceEnabled
+        set(enabled) {
+            if (_voiceEnabled != enabled) {
+                _voiceEnabled = enabled
+            }
+        }
+
+    private var _isConnected = MutableLiveData(false)
+    val isConnected: LiveData<Boolean>
+    get() = _isConnected
+
     init {
         chatService.setConnectionListener(this)
+        audioService.setListener(this)
     }
 
     fun start() {
@@ -43,39 +59,39 @@ class MainViewModel(val deviceName: String, val macAddress: String) : ViewModel(
     }
 
     override fun onCleared() {
+        audioService.stop()
         chatService.stop()
+        audioService.setListener(null)
         chatService.setConnectionListener(null)
     }
 
-    override fun onConnectionFailed() {
-        _spinner.postValue(true)
-        _buttonEnabled.postValue(false)
-//        _state.postValue("Connection failed")
-    }
-
     override fun onConnected() {
+        _isConnected.postValue(true)
         _spinner.postValue(false)
         _buttonEnabled.postValue(true)
         _state.postValue("Connected")
+        audioService.start()
     }
 
     override fun onDisconnected() {
+        _isConnected.postValue(false)
         _spinner.postValue(true)
         _buttonEnabled.postValue(false)
         _state.postValue("Disconnected")
+        audioService.stop()
     }
 
-    override fun onLostConnection() {
-        _spinner.postValue(true)
-        _buttonEnabled.postValue(false)
-        _state.postValue("Connection Lost")
+    override fun onMessage(buffer: ByteArray, bytes: Int) {
+        audioService.play(buffer, bytes)
     }
 
-    override fun onMessage(bytes: Int, buffer: ByteArray) {
-        _message.postValue(String(buffer, 0, bytes))
+    override fun onAudioRead(buffer: ByteArray, bytes: Int) {
+        if (isConnected.value!! && voiceEnabled) {
+            chatService.write(buffer)
+        }
     }
 
-    fun sendMessage(message: String) = viewModelScope.launch{
+    fun sendMessage(message: String) = viewModelScope.launch {
         val bytes = message.toByteArray()
         chatService.write(bytes)
     }

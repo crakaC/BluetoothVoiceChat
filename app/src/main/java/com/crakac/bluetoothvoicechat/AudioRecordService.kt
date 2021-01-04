@@ -2,7 +2,14 @@ package com.crakac.bluetoothvoicechat
 
 import android.media.*
 import android.media.audiofx.AcousticEchoCanceler
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+interface AudioRecordServiceListener {
+    fun onAudioRead(buffer: ByteArray, bytes: Int)
+}
 
 class AudioRecordService {
     val TAG: String = "AudioRecordService"
@@ -11,15 +18,15 @@ class AudioRecordService {
     private val bufferSize = AudioRecord.getMinBufferSize(
         samplingRate,
         AudioFormat.CHANNEL_IN_MONO,
-        AudioFormat.ENCODING_PCM_16BIT
-    ) * 2
+        AudioFormat.ENCODING_PCM_8BIT
+    )
     private val buffer = ByteArray(bufferSize)
 
     private val audioRecord = AudioRecord(
         MediaRecorder.AudioSource.VOICE_COMMUNICATION,
         samplingRate,
         AudioFormat.CHANNEL_IN_MONO,
-        AudioFormat.ENCODING_PCM_16BIT,
+        AudioFormat.ENCODING_PCM_8BIT,
         bufferSize
     )
 
@@ -27,7 +34,7 @@ class AudioRecordService {
         AudioManager.STREAM_VOICE_CALL,
         samplingRate,
         AudioFormat.CHANNEL_OUT_MONO,
-        AudioFormat.ENCODING_PCM_16BIT,
+        AudioFormat.ENCODING_PCM_8BIT,
         bufferSize,
         AudioTrack.MODE_STREAM
     )
@@ -35,24 +42,32 @@ class AudioRecordService {
     private val echoCanceler = if (AcousticEchoCanceler.isAvailable())
         AcousticEchoCanceler.create(audioRecord.audioSessionId) else null
 
-    fun start() {
+    private var job: Job? = null
+    private var listener: AudioRecordServiceListener? = null
 
+    fun start() {
         echoCanceler?.enabled = true
         audioRecord.startRecording()
         audioTrack.play()
-        scope.launch {
-            withContext(Dispatchers.Default) {
-                while (isActive) {
-                    audioRecord.read(buffer, 0, bufferSize)
-                    audioTrack.write(buffer, 0, bufferSize)
-                }
+        job = scope.launch {
+            while (isActive) {
+                audioRecord.read(buffer, 0, bufferSize)
+                listener?.onAudioRead(buffer, bufferSize)
             }
         }
     }
 
     fun stop() {
-        scope.cancel()
+        job?.cancel()
         audioRecord.stop()
         audioTrack.stop()
+    }
+
+    fun play(data: ByteArray, bytes: Int) {
+        audioTrack.write(data, 0, bytes)
+    }
+
+    fun setListener(listener: AudioRecordServiceListener?) {
+        this.listener = listener
     }
 }
