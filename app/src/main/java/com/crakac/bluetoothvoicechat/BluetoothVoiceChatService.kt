@@ -78,7 +78,7 @@ class BluetoothVoiceChatService {
     }
 
     @Synchronized
-    fun connected(socket: BluetoothSocket, device: BluetoothDevice) {
+    fun connected(socket: BluetoothSocket) {
         connectJob?.cancel()
         connectedJob?.cancel()
         acceptJob?.cancel()
@@ -152,7 +152,7 @@ class BluetoothVoiceChatService {
                 synchronized(this@BluetoothVoiceChatService) {
                     when (state) {
                         ChatServiceState.LISTEN, ChatServiceState.CONNECTING -> {
-                            connected(socket, socket.remoteDevice)
+                            connected(socket)
                         }
                         ChatServiceState.NONE, ChatServiceState.CONNECTED -> {
                             Log.d(TAG, "close unwanted socket")
@@ -185,7 +185,7 @@ class BluetoothVoiceChatService {
                     delay(3000)
                     continue
                 }
-                connected(socket!!, device)
+                connected(socket!!)
                 break
             }
         }
