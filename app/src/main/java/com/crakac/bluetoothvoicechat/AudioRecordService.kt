@@ -63,8 +63,8 @@ class AudioRecordService {
         audioTrack.play()
         job = scope.launch {
             while (isActive) {
-                audioRecord.read(buffer, 0, bufferSize)
-                listener?.onAudioRead(buffer.copyOf(), bufferSize)
+                val bytes = audioRecord.read(buffer, 0, bufferSize)
+                listener?.onAudioRead(buffer.copyOf(bytes), bytes)
             }
         }
     }

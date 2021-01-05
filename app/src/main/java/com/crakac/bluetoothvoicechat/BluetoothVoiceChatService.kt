@@ -145,7 +145,7 @@ class BluetoothVoiceChatService {
             while (isActive && isConnected) {
                 try {
                     val bytes = socket.inputStream.read(readBuffer, 0, readBuffer.size)
-                    handleMessage(readBuffer.copyOf(), bytes)
+                    handleMessage(readBuffer.copyOf(bytes), bytes)
                     readCount += bytes
                 } catch (e: IOException) {
                     Log.e(TAG, "disconnected", e)
