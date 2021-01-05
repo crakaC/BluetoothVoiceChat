@@ -2,6 +2,7 @@ package com.crakac.bluetoothvoicechat
 
 import android.media.*
 import android.media.audiofx.AcousticEchoCanceler
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
@@ -20,7 +21,7 @@ class AudioRecordService {
         AudioFormat.CHANNEL_IN_MONO,
         AudioFormat.ENCODING_PCM_16BIT
     )
-    private val buffer = ByteArray(bufferSize)
+    private val buffer = ShortArray(bufferSize)
 
     private val audioRecord = AudioRecord(
         MediaRecorder.AudioSource.VOICE_COMMUNICATION,
@@ -63,8 +64,18 @@ class AudioRecordService {
         audioTrack.play()
         job = scope.launch {
             while (isActive) {
-                val bytes = audioRecord.read(buffer, 0, bufferSize)
-                listener?.onAudioRead(buffer.copyOf(bytes), bytes)
+                val shorts = audioRecord.read(buffer, 0, bufferSize)
+                if (shorts < 0) {
+                    val msg = when (shorts) {
+                        AudioRecord.ERROR_INVALID_OPERATION -> "Invalid Operation"
+                        AudioRecord.ERROR_BAD_VALUE -> "Bad Value"
+                        AudioRecord.ERROR_DEAD_OBJECT -> "Dead Object"
+                        else -> "Unknown Error"
+                    }
+                    Log.e(TAG, msg)
+                }
+                val byteArray = buffer.toByteArray(shorts)
+                listener?.onAudioRead(byteArray, byteArray.size)
             }
         }
     }
@@ -75,8 +86,9 @@ class AudioRecordService {
         audioTrack.stop()
     }
 
-    fun play(data: ByteArray, bytes: Int) {
-        audioTrack.write(data, 0, bytes)
+    fun play(data: ByteArray) {
+        val byteArray = data.toShortArray()
+        audioTrack.write(byteArray, 0, byteArray.size)
     }
 
     fun setListener(listener: AudioRecordServiceListener?) {

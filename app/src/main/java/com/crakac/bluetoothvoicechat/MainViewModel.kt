@@ -81,8 +81,8 @@ class MainViewModel(val deviceName: String, val macAddress: String) : ViewModel(
         audioService.stop()
     }
 
-    override fun onMessage(buffer: ByteArray, bytes: Int) {
-        audioService.play(buffer, bytes)
+    override fun onMessage(data: ByteArray) {
+        audioService.play(data)
     }
 
     override fun onAudioRead(buffer: ByteArray, bytes: Int) {

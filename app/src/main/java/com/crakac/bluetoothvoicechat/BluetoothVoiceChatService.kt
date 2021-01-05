@@ -20,7 +20,7 @@ class BluetoothVoiceChatService {
     interface ConnectionListener {
         fun onConnected()
         fun onDisconnected()
-        fun onMessage(buffer: ByteArray, bytes: Int)
+        fun onMessage(data: ByteArray)
     }
 
     private var scope = CoroutineScope(Job())
@@ -77,6 +77,7 @@ class BluetoothVoiceChatService {
         if(isConnected) {
             isConnected = false
             listener?.onDisconnected()
+            close(serverSocket)
             accept()
         }
     }
@@ -85,11 +86,11 @@ class BluetoothVoiceChatService {
         listener?.onConnected()
     }
 
-    private fun handleMessage(buffer: ByteArray, bytes: Int) {
-        listener?.onMessage(buffer, bytes)
+    private fun handleMessage(data: ByteArray) {
+        listener?.onMessage(data)
     }
 
-    private fun accept(){
+    private fun accept() {
         scope.launch {
             Log.d(TAG, "BEGIN Accept Coroutine")
             while (isActive && !isConnected) {
@@ -145,7 +146,7 @@ class BluetoothVoiceChatService {
             while (isActive && isConnected) {
                 try {
                     val bytes = socket.inputStream.read(readBuffer, 0, readBuffer.size)
-                    handleMessage(readBuffer.copyOf(bytes), bytes)
+                    handleMessage(readBuffer.copyOf(bytes))
                     readCount += bytes
                 } catch (e: IOException) {
                     Log.e(TAG, "disconnected", e)
