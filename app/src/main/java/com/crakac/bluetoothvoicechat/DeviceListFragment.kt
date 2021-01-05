@@ -39,8 +39,7 @@ class DeviceListFragment : Fragment() {
     ): View {
         val binding = FragmentDevicelistBinding.inflate(inflater)
         listView = binding.listView
-        adapter = DeviceListAdapter(requireContext()){ item ->
-            val(name, address) = item
+        adapter = DeviceListAdapter(requireContext()){ name, address ->
             findNavController().navigate(DeviceListFragmentDirections.actionDeviceListFragmentToConnectionFragment(name, address))
         }
         adapter.addAll(bluetoothAdapter.bondedDevices.map { it.name to it.address })
@@ -48,22 +47,22 @@ class DeviceListFragment : Fragment() {
         return binding.root
     }
 
-    class DeviceListAdapter(context: Context, private val listener: (Pair<String, String>) -> Unit) :
-        ArrayAdapter<Pair<String, String>>(context, 0) {
+    class DeviceListAdapter(context: Context, private val listener: (String, String) -> Unit) :
+        ArrayAdapter<Pair<String, String>>(context, -1) {
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
             val v = convertView ?: inflateView()
-            val titleText = v.findViewById<TextView>(android.R.id.text1)
-            val subText = v.findViewById<TextView>(android.R.id.text2)
+            val titleText = v.findViewById<TextView>(R.id.deviceName)
+            val subText = v.findViewById<TextView>(R.id.macAddress)
             val (name, address) = getItem(position)!!
             titleText.text = name
             subText.text = address
             v.setOnClickListener {
-                getItem(position)?.let {listener.invoke(it)}
+                listener(name, address)
             }
             return v
         }
 
         private fun inflateView() =
-            LayoutInflater.from(context).inflate(android.R.layout.simple_list_item_2, null)
+            LayoutInflater.from(context).inflate(R.layout.list_item_bluetooth, null)
     }
 }
