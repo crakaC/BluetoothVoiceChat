@@ -8,8 +8,6 @@ import android.util.Log
 import kotlinx.coroutines.*
 import java.io.Closeable
 import java.io.IOException
-import java.io.InputStream
-import java.io.OutputStream
 import java.util.*
 import java.util.concurrent.LinkedBlockingQueue
 
@@ -30,28 +28,6 @@ class BluetoothVoiceChatService {
     private var listener: ConnectionListener? = null
 
     private var serverSocket: BluetoothServerSocket? = null
-    private var outSocket: BluetoothSocket? = null
-    private var inSocket: BluetoothSocket? = null
-
-    private var _isInSocketReady = false
-    private var isInSocketReady: Boolean
-        @Synchronized
-        get() = _isInSocketReady
-        @Synchronized set(value) {
-            _isInSocketReady = value
-        }
-
-    private var _isOutnSocketReady = false
-    private var isOutnSocketReady: Boolean
-        @Synchronized
-        get() = _isOutnSocketReady
-        @Synchronized
-        set(value) {
-            _isOutnSocketReady = value
-        }
-
-    private var inputStream: InputStream? = null
-    private var outputStream: OutputStream? = null
 
     private val writeQueue = LinkedBlockingQueue<ByteArray>()
     private val readBuffer = ByteArray(8096)
@@ -60,44 +36,52 @@ class BluetoothVoiceChatService {
     private var readCount = 0L
     @Volatile
     private var writeCount = 0L
+    @Volatile
+    private var isConnected = false
 
-    fun setConnectionListener(listener: ConnectionListener?) {
-        this.listener = listener
+    init {
         scope.launch {
             while(isActive){
                 delay(1000)
-                Log.d(TAG, "read: $readCount, write: $writeCount")
+                if(isConnected) {
+                    Log.d(TAG, "read: $readCount, write: $writeCount")
+                }
             }
         }
     }
+    fun setConnectionListener(listener: ConnectionListener?) {
+        this.listener = listener
+    }
 
-    @Synchronized
     fun start() {
         accept()
     }
 
-    @Synchronized
     fun connect(address: String) {
         val device = adapter.getRemoteDevice(address)
         connectTo(device)
     }
 
-    @Synchronized
     fun stop() {
         Log.d(TAG, "stop")
         scope.cancel()
-        close(inSocket, outSocket, serverSocket)
+        close(serverSocket)
     }
 
     fun write(out: ByteArray) {
         writeQueue.add(out)
     }
 
+    @Synchronized
     private fun disconnected() {
-        listener?.onDisconnected()
+        if(isConnected) {
+            isConnected = false
+            listener?.onDisconnected()
+            accept()
+        }
     }
 
-    private fun connectionSucceeded() {
+    private fun connectionEstablished() {
         listener?.onConnected()
     }
 
@@ -105,51 +89,20 @@ class BluetoothVoiceChatService {
         listener?.onMessage(buffer, bytes)
     }
 
-    @Synchronized
-    private fun checkBiDirectionalConnection() {
-        if (isInSocketReady && isOutnSocketReady) {
-            connectionSucceeded()
-        }
-    }
-
     private fun accept(){
         scope.launch {
             Log.d(TAG, "BEGIN Accept Coroutine")
-            while (isActive) {
-                serverSocket = try {
-                    adapter.listenUsingRfcommWithServiceRecord(SERVER_NAME, ID)
-                } catch (e: IOException) {
-                    val d = 5000L
-                    Log.e(TAG, "Cannot open serverSocket. retry after $d msec", e)
-                    delay(d)
-                    continue
-                }
-                isInSocketReady = false
-                inSocket = try {
-                    serverSocket?.accept()!!
-                } catch (e: IOException) {
-                    Log.e(TAG, "Accept failed.", e)
-                    break
-                }
-                Log.d(TAG, "accepted!")
+            while (isActive && !isConnected) {
                 try {
-                    inputStream = inSocket?.inputStream
+                    serverSocket = adapter.listenUsingRfcommWithServiceRecord(SERVER_NAME, ID)
+                    val socket = serverSocket?.accept()!!
+                    Log.d(TAG, "accepted!")
+                    connected(socket)
+                    close(serverSocket)
                 } catch (e: IOException) {
-                    Log.e(TAG, "Cannot get IOStream from socket", e)
+                    Log.e(TAG, "Cannot accept()", e)
+                    delay(3000)
                     continue
-                }
-                isInSocketReady = true
-                checkBiDirectionalConnection()
-                while (isActive) {
-                    try {
-                        val bytes = inputStream!!.read(readBuffer, 0, readBuffer.size)
-                        handleMessage(readBuffer, bytes)
-                        readCount += bytes
-                    } catch (e: IOException) {
-                        Log.e(TAG, "disconnected", e)
-                        disconnected()
-                        break
-                    }
                 }
             }
             Log.i(TAG, "END Accept Coroutine.")
@@ -159,9 +112,8 @@ class BluetoothVoiceChatService {
     private fun connectTo(device: BluetoothDevice) {
         scope.launch {
             Log.i(TAG, "BEGIN ConnectThread")
-            while (isActive) {
-                isOutnSocketReady = false
-                outSocket = try {
+            while (isActive && !isConnected) {
+                val socket = try {
                     device.createRfcommSocketToServiceRecord(ID)
                 } catch (e: IOException) {
                     Log.e(TAG, "cannot create socket to $device", e)
@@ -170,27 +122,51 @@ class BluetoothVoiceChatService {
                 }
                 try {
                     adapter.cancelDiscovery()
-                    outSocket?.connect()
-                    outputStream = outSocket?.outputStream
+                    socket.connect()
                 } catch (e: IOException) {
                     Log.e(TAG, "Connect to $device failed")
                     delay(3000)
                     continue
                 }
-                isOutnSocketReady = true
-                checkBiDirectionalConnection()
-                while (isActive) {
-                    val out = writeQueue.poll() ?: continue
-                    try {
-                        outputStream?.write(out)
-                        writeCount += out.size
-                    } catch (e: IOException) {
-                        Log.e(TAG, "Cannot write to OutputStream", e)
-                        disconnected()
-                    }
-                }
-                writeQueue.clear()
+                connected(socket)
             }
+        }
+    }
+
+    @Synchronized
+    private fun connected(socket: BluetoothSocket){
+        if(isConnected){
+            close(socket)
+            return
+        }
+        connectionEstablished()
+        isConnected = true
+        scope.launch {
+            while (isActive && isConnected) {
+                try {
+                    val bytes = socket.inputStream.read(readBuffer, 0, readBuffer.size)
+                    handleMessage(readBuffer.copyOf(), bytes)
+                    readCount += bytes
+                } catch (e: IOException) {
+                    Log.e(TAG, "disconnected", e)
+                    disconnected()
+                }
+            }
+            close(socket)
+        }
+        scope.launch{
+            while (isActive && isConnected) {
+                val out = writeQueue.poll() ?: continue
+                try {
+                    socket.outputStream.write(out)
+                    writeCount += out.size
+                } catch (e: IOException) {
+                    Log.e(TAG, "Cannot write to OutputStream", e)
+                    disconnected()
+                }
+            }
+            close(socket)
+            writeQueue.clear()
         }
     }
 
