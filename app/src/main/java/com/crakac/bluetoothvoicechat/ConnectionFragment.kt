@@ -32,11 +32,6 @@ class ConnectionFragment : Fragment() {
         binding = FragmentConnectionBinding.inflate(inflater)
         binding.viewModel = viewModel
         binding.lifecycleOwner = this
-        binding.button.setOnClickListener{
-            val text = binding.editText.text.toString()
-            viewModel.sendMessage(text)
-            binding.editText.text.clear()
-        }
         viewModel.state.observe(viewLifecycleOwner){
             it?.let{
                 showSnackBar(it)
