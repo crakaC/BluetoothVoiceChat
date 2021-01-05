@@ -18,7 +18,7 @@ class AudioRecordService {
     private val bufferSize = AudioRecord.getMinBufferSize(
         samplingRate,
         AudioFormat.CHANNEL_IN_MONO,
-        AudioFormat.ENCODING_PCM_8BIT
+        AudioFormat.ENCODING_PCM_16BIT
     )
     private val buffer = ByteArray(bufferSize)
 
@@ -26,12 +26,12 @@ class AudioRecordService {
         MediaRecorder.AudioSource.VOICE_COMMUNICATION,
         samplingRate,
         AudioFormat.CHANNEL_IN_MONO,
-        AudioFormat.ENCODING_PCM_8BIT,
+        AudioFormat.ENCODING_PCM_16BIT,
         bufferSize
     )
 
     private val trackBufferSize = AudioTrack.getMinBufferSize(
-        samplingRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_8BIT
+        samplingRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
     ) * 2
 
     private val attr = AudioAttributes.Builder()
@@ -41,7 +41,7 @@ class AudioRecordService {
     private val format = AudioFormat.Builder()
         .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
         .setSampleRate(samplingRate)
-        .setEncoding(AudioFormat.ENCODING_PCM_8BIT)
+        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
         .build()
     private val audioTrack = AudioTrack(
         attr,
