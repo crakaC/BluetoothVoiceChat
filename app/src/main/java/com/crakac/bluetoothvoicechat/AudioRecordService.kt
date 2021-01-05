@@ -30,13 +30,25 @@ class AudioRecordService {
         bufferSize
     )
 
+    private val trackBufferSize = AudioTrack.getMinBufferSize(
+        samplingRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_8BIT
+    ) * 2
+
+    private val attr = AudioAttributes.Builder()
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+        .build()
+    private val format = AudioFormat.Builder()
+        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+        .setSampleRate(samplingRate)
+        .setEncoding(AudioFormat.ENCODING_PCM_8BIT)
+        .build()
     private val audioTrack = AudioTrack(
-        AudioManager.STREAM_VOICE_CALL,
-        samplingRate,
-        AudioFormat.CHANNEL_OUT_MONO,
-        AudioFormat.ENCODING_PCM_8BIT,
-        bufferSize,
-        AudioTrack.MODE_STREAM
+        attr,
+        format,
+        trackBufferSize,
+        AudioTrack.MODE_STREAM,
+        AudioManager.AUDIO_SESSION_ID_GENERATE
     )
 
     private val echoCanceler = if (AcousticEchoCanceler.isAvailable())
@@ -52,7 +64,7 @@ class AudioRecordService {
         job = scope.launch {
             while (isActive) {
                 audioRecord.read(buffer, 0, bufferSize)
-                listener?.onAudioRead(buffer, bufferSize)
+                listener?.onAudioRead(buffer.copyOf(), bufferSize)
             }
         }
     }
