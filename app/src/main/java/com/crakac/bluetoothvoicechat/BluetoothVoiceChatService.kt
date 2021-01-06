@@ -27,6 +27,7 @@ class BluetoothVoiceChatService {
     private val adapter = BluetoothAdapter.getDefaultAdapter()
     private var listener: ConnectionListener? = null
 
+    private var socket: BluetoothSocket? = null
     private var serverSocket: BluetoothServerSocket? = null
 
     private val writeQueue = LinkedBlockingQueue<ByteArray>()
@@ -65,7 +66,7 @@ class BluetoothVoiceChatService {
     fun stop() {
         Log.d(TAG, "stop")
         scope.cancel()
-        close(serverSocket)
+        close(socket, serverSocket)
     }
 
     fun write(out: ByteArray) {
@@ -75,6 +76,7 @@ class BluetoothVoiceChatService {
     @Synchronized
     private fun disconnected() {
         if(isConnected) {
+            Log.d(TAG, "disconnected()")
             isConnected = false
             listener?.onDisconnected()
             close(serverSocket)
@@ -96,13 +98,17 @@ class BluetoothVoiceChatService {
             while (isActive && !isConnected) {
                 try {
                     serverSocket = adapter.listenUsingRfcommWithServiceRecord(SERVER_NAME, ID)
+                } catch (e: IOException) {
+                    Log.e(TAG, "Cannot create ServerSocket", e)
+                    continue
+                }
+                try {
                     val socket = serverSocket?.accept()!!
                     Log.d(TAG, "accepted!")
                     connected(socket)
                     close(serverSocket)
                 } catch (e: IOException) {
-                    Log.e(TAG, "Cannot accept()", e)
-                    delay(3000)
+                    Log.d(TAG, "accept() failed.", e)
                     continue
                 }
             }
@@ -112,25 +118,27 @@ class BluetoothVoiceChatService {
 
     private fun connectTo(device: BluetoothDevice) {
         scope.launch {
-            Log.i(TAG, "BEGIN ConnectThread")
+            Log.i(TAG, "BEGIN Connect Coroutine")
             while (isActive && !isConnected) {
-                val socket = try {
+                socket = try {
                     device.createRfcommSocketToServiceRecord(ID)
                 } catch (e: IOException) {
-                    Log.e(TAG, "cannot create socket to $device", e)
+                    Log.e(TAG, "Cannot create socket to $device", e)
                     delay(3000)
                     continue
                 }
                 try {
                     adapter.cancelDiscovery()
-                    socket.connect()
+                    socket?.connect()
                 } catch (e: IOException) {
                     Log.e(TAG, "Connect to $device failed")
                     delay(3000)
                     continue
                 }
-                connected(socket)
+                connected(socket!!)
+                close(serverSocket)
             }
+            Log.i(TAG, "END Connect Coroutine")
         }
     }
 
@@ -149,7 +157,6 @@ class BluetoothVoiceChatService {
                     handleMessage(readBuffer.copyOf(bytes))
                     readCount += bytes
                 } catch (e: IOException) {
-                    Log.e(TAG, "disconnected", e)
                     disconnected()
                 }
             }
@@ -162,7 +169,6 @@ class BluetoothVoiceChatService {
                     socket.outputStream.write(out)
                     writeCount += out.size
                 } catch (e: IOException) {
-                    Log.e(TAG, "Cannot write to OutputStream", e)
                     disconnected()
                 }
             }
