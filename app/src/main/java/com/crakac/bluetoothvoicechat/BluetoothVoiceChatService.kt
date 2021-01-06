@@ -23,7 +23,7 @@ class BluetoothVoiceChatService {
         fun onMessage(data: ByteArray)
     }
 
-    private var scope = CoroutineScope(Job())
+    private var scope = CoroutineScope(newFixedThreadPoolContext(2, "VoiceChatService"))
     private val adapter = BluetoothAdapter.getDefaultAdapter()
     private var listener: ConnectionListener? = null
 
@@ -31,25 +31,28 @@ class BluetoothVoiceChatService {
     private var serverSocket: BluetoothServerSocket? = null
 
     private val writeQueue = LinkedBlockingQueue<ByteArray>()
-    private val readBuffer = ByteArray(8096)
+    private val readBuffer = ByteArray(4096)
 
     @Volatile
     private var readCount = 0L
+
     @Volatile
     private var writeCount = 0L
+
     @Volatile
     private var isConnected = false
 
     init {
-        scope.launch {
-            while(isActive){
+        scope.launch(Dispatchers.Default) {
+            while (isActive) {
                 delay(1000)
-                if(isConnected) {
+                if (isConnected) {
                     Log.d(TAG, "read: $readCount, write: $writeCount")
                 }
             }
         }
     }
+
     fun setConnectionListener(listener: ConnectionListener?) {
         this.listener = listener
     }
@@ -75,7 +78,7 @@ class BluetoothVoiceChatService {
 
     @Synchronized
     private fun disconnected() {
-        if(isConnected) {
+        if (isConnected) {
             Log.d(TAG, "disconnected()")
             isConnected = false
             listener?.onDisconnected()
@@ -94,7 +97,7 @@ class BluetoothVoiceChatService {
 
     private fun accept() {
         scope.launch {
-            Log.d(TAG, "BEGIN Accept Coroutine")
+            Log.d(TAG, "BEGIN Accept Coroutine ${Thread.currentThread().name}")
             while (isActive && !isConnected) {
                 try {
                     serverSocket = adapter.listenUsingRfcommWithServiceRecord(SERVER_NAME, ID)
@@ -118,7 +121,7 @@ class BluetoothVoiceChatService {
 
     private fun connectTo(device: BluetoothDevice) {
         scope.launch {
-            Log.i(TAG, "BEGIN Connect Coroutine")
+            Log.i(TAG, "BEGIN Connect Coroutine ${Thread.currentThread().name}")
             while (isActive && !isConnected) {
                 socket = try {
                     device.createRfcommSocketToServiceRecord(ID)
@@ -143,17 +146,18 @@ class BluetoothVoiceChatService {
     }
 
     @Synchronized
-    private fun connected(socket: BluetoothSocket){
-        if(isConnected){
+    private fun connected(socket: BluetoothSocket) {
+        if (isConnected) {
             close(socket)
             return
         }
         connectionEstablished()
         isConnected = true
         scope.launch {
+            Log.d(TAG, "Read Coroutine ${Thread.currentThread().name}")
             while (isActive && isConnected) {
                 try {
-                    val bytes = socket.inputStream.read(readBuffer, 0, readBuffer.size)
+                    val bytes = socket.inputStream.read(readBuffer)
                     handleMessage(readBuffer.copyOf(bytes))
                     readCount += bytes
                 } catch (e: IOException) {
@@ -161,8 +165,10 @@ class BluetoothVoiceChatService {
                 }
             }
             close(socket)
+            Log.d(TAG, "END Read Coroutine")
         }
-        scope.launch{
+        scope.launch {
+            Log.d(TAG, "Write Coroutine ${Thread.currentThread().name}")
             while (isActive && isConnected) {
                 val out = writeQueue.poll() ?: continue
                 try {
@@ -174,6 +180,7 @@ class BluetoothVoiceChatService {
             }
             close(socket)
             writeQueue.clear()
+            Log.d(TAG, "END Write Coroutine")
         }
     }
 
