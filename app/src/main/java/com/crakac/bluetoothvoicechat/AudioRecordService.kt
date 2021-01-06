@@ -72,7 +72,8 @@ class AudioRecordService {
                         AudioRecord.ERROR_DEAD_OBJECT -> "Dead Object"
                         else -> "Unknown Error"
                     }
-                    Log.e(TAG, msg)
+                    Log.wtf(TAG, msg)
+                    continue
                 }
                 val byteArray = buffer.toByteArray(shorts)
                 listener?.onAudioRead(byteArray, byteArray.size)
