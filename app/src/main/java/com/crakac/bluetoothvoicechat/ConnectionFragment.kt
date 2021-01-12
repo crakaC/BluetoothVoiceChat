@@ -14,7 +14,6 @@ class ConnectionFragment : Fragment() {
     lateinit var deviceName: String
     lateinit var macAddress: String
     private val viewModel: MainViewModel by viewModels { MainViewModel.Factory(deviceName, macAddress) }
-    private lateinit var binding: FragmentConnectionBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,7 +28,7 @@ class ConnectionFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        binding = FragmentConnectionBinding.inflate(inflater)
+        val binding = FragmentConnectionBinding.inflate(inflater)
         binding.viewModel = viewModel
         binding.lifecycleOwner = this
         viewModel.state.observe(viewLifecycleOwner){

@@ -7,7 +7,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
-import android.widget.ListView
 import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
@@ -16,8 +15,6 @@ import com.crakac.bluetoothvoicechat.databinding.FragmentDevicelistBinding
 class DeviceListFragment : Fragment() {
     val TAG: String = "DeviceListFragment"
 
-    private lateinit var adapter: DeviceListAdapter
-    private lateinit var listView: ListView
     private val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,9 +35,14 @@ class DeviceListFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         val binding = FragmentDevicelistBinding.inflate(inflater)
-        listView = binding.listView
-        adapter = DeviceListAdapter(requireContext()){ name, address ->
-            findNavController().navigate(DeviceListFragmentDirections.actionDeviceListFragmentToConnectionFragment(name, address))
+        val listView = binding.listView
+        val adapter = DeviceListAdapter(requireContext()) { name, address ->
+            findNavController().navigate(
+                DeviceListFragmentDirections.actionDeviceListFragmentToConnectionFragment(
+                    name,
+                    address
+                )
+            )
         }
         adapter.addAll(bluetoothAdapter.bondedDevices.map { it.name to it.address })
         listView.adapter = adapter
