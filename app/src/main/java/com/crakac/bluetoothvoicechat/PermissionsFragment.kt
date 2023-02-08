@@ -3,6 +3,7 @@ package com.crakac.bluetoothvoicechat
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.core.content.ContextCompat
@@ -10,9 +11,20 @@ import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 
 private const val REQUEST_CODE = 11
-private val PERMISSIONS_REQUIRED = arrayOf(
-    Manifest.permission.RECORD_AUDIO
-)
+private val bluetoothPermissions =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+        arrayOf(
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.BLUETOOTH_ADVERTISE,
+            Manifest.permission.BLUETOOTH_SCAN
+        )
+    else
+        arrayOf(
+            Manifest.permission.BLUETOOTH,
+            Manifest.permission.BLUETOOTH_ADMIN
+        )
+
+private val permissions = bluetoothPermissions + Manifest.permission.RECORD_AUDIO
 
 class PermissionsFragment : Fragment() {
     val TAG: String = "PermissionFragment"
@@ -20,7 +32,7 @@ class PermissionsFragment : Fragment() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!hasPermissions(requireContext())) {
-            requestPermissions(PERMISSIONS_REQUIRED, REQUEST_CODE)
+            requestPermissions(permissions, REQUEST_CODE)
         } else {
             findNavController().popBackStack()
         }
@@ -39,7 +51,7 @@ class PermissionsFragment : Fragment() {
     }
 
     companion object {
-        fun hasPermissions(context: Context) = PERMISSIONS_REQUIRED.all { permission ->
+        fun hasPermissions(context: Context) = permissions.all { permission ->
             ContextCompat.checkSelfPermission(
                 context,
                 permission

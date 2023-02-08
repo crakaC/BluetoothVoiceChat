@@ -1,5 +1,6 @@
 package com.crakac.bluetoothvoicechat
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothServerSocket
@@ -95,6 +96,7 @@ class BluetoothVoiceChatService {
         listener?.onMessage(data)
     }
 
+    @SuppressLint("MissingPermission")
     private fun accept() {
         scope.launch {
             Log.d(TAG, "BEGIN Accept Coroutine ${Thread.currentThread().name}")
@@ -119,6 +121,7 @@ class BluetoothVoiceChatService {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun connectTo(device: BluetoothDevice) {
         scope.launch {
             Log.i(TAG, "BEGIN Connect Coroutine ${Thread.currentThread().name}")

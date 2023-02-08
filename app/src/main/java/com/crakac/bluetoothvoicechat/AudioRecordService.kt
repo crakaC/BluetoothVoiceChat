@@ -1,5 +1,6 @@
 package com.crakac.bluetoothvoicechat
 
+import android.annotation.SuppressLint
 import android.media.*
 import android.media.audiofx.AcousticEchoCanceler
 import android.util.Log
@@ -23,6 +24,7 @@ class AudioRecordService {
     )
     private val buffer = ShortArray(bufferSize)
 
+    @SuppressLint("MissingPermission")
     private val audioRecord = AudioRecord(
         MediaRecorder.AudioSource.VOICE_COMMUNICATION,
         samplingRate,

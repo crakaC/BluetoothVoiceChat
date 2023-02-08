@@ -10,8 +10,9 @@ class MainViewModel(val deviceName: String, val macAddress: String) : ViewModel(
 
     class Factory(private val deviceName: String, private val address: String) :
         ViewModelProvider.Factory {
+
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel?> create(modelClass: Class<T>): T {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
             return MainViewModel(deviceName, address) as T
         }
     }
